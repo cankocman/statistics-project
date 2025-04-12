@@ -1,0 +1,639 @@
+---
+title: "EC233 Homework 1"
+date: "01.11.2024"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: united
+    code_folding: hide
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  warning = FALSE, 
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center'
+)
+```
+
+# Setup and Package Installation
+
+## Required Packages
+
+```{r install_packages}
+packages <- c("devtools", "quantmod", "ggplot2", "dplyr", "zoo")
+invisible(lapply(packages, function(p) {
+  if (!require(p, character.only = TRUE)) {
+    install.packages(p)
+    library(p, character.only = TRUE)
+  }
+}))
+
+if (!require("pwt10")) {
+  devtools::install_github("michaelchleung/pwt10")
+  library(pwt10)
+}
+```
+
+# Creating Dataset {.tabset}
+
+## Statistics
+
+```{r creating_dataset}
+set.seed(7623)
+n <- sample(35:4000, 1)
+mu <- rnorm(1, 2.5, 4)
+sd <- abs(rnorm(1, 2.5, 4))
+
+# Generate datasets
+ulusoy_data <- rnorm(n, mu, sd)
+ulusoy_data2 <- rnorm(n, mu, 2.5*sd)
+
+stats <- data.frame(
+  Statistic = c("Mean", "Variance", "Standard Deviation", "Median"),
+  Value = round(c(mean(ulusoy_data), var(ulusoy_data), 
+                 sd(ulusoy_data), median(ulusoy_data)), 4)
+)
+
+knitr::kable(stats, caption = "Statistics")
+```
+
+## Histograms
+
+```{r histograms}
+par(mar = c(5, 4, 4, 4))
+hist(ulusoy_data, 
+     breaks = 30,
+     probability = TRUE, 
+     col = rgb(0,0,1,0.5),
+     main = "Histograms",
+     xlab = "Values")
+
+hist(ulusoy_data2, 
+     breaks = 30,
+     probability = TRUE,
+     col = rgb(1,0,0,0.4),
+     add = TRUE)
+
+legend("topright", 
+       c("Original Data", "Data with 2.5*SD"), 
+       fill = c(rgb(0,0,1,0.5), rgb(1,0,0,0.5)))
+cat("Since standard deviation measures how spread out numbers are from the mean, higher the standard deviation, higher the data, hence a broader histogram.")
+```
+
+# Macro-economic Analysis {.tabset}
+
+## GDP Comparisons of 2 Sets of Countries
+
+### Code
+```{r gdp_comparisons}
+gdp_compare <- function(data, c1, c2, year1, year2, type = "growth") {
+  if (type == "growth") {
+    comparison_data <- data %>%
+      filter(isocode %in% c(c1, c2), 
+             year >= year1, 
+             year <= year2) %>%
+      group_by(isocode) %>%
+      arrange(year) %>%
+      mutate(growth = c(NA, diff(log(rgdpna/pop))) * 100) %>%
+      filter(!is.na(growth))
+    
+    plot <- ggplot(comparison_data, 
+           aes(x = year, y = growth, color = isocode)) +
+      geom_line() +
+      theme_minimal() +
+      labs(title = paste("GDP per Capita Growth Rate:", c1, "vs", c2),
+           x = "Year", 
+           y = "Growth Rate (%)")
+  } else {
+    comparison_data <- data %>%
+      filter(isocode %in% c(c1, c2), 
+             year >= year1, 
+             year <= year2) %>%
+      group_by(isocode) %>%
+      arrange(year) %>%
+      mutate(nominal_gdp = rgdpna) %>%
+      filter(!is.na(nominal_gdp))
+    
+    plot <- ggplot(comparison_data, 
+           aes(x = year, y = nominal_gdp, color = isocode)) +
+      geom_line() +
+      theme_minimal() +
+      labs(title = paste("Nominal GDP Comparison:", c1, "vs", c2),
+           x = "Year", 
+           y = "GDP (in millions)")
+  }
+  return(plot)
+}
+```
+
+### Turkey vs Poland
+```{r turkey_poland}
+data("pwt10.0")
+print(gdp_compare(pwt10.0, "TUR", "POL", 1987, 2015, type = "growth"))
+```
+
+### Germany vs France
+```{r germany_france}
+print(gdp_compare(pwt10.0, "DEU", "FRA", 1987, 2015, type = "nominal"))
+```
+
+## Turkey's Ranking Among 10 Similar Countries
+
+### Code
+```{r countries_analyzing}
+analyze_countries <- function(data, countries, year1, year2) {
+  rankings <- data %>%
+    filter(isocode %in% countries, 
+           year >= year1, 
+           year <= year2) %>%
+    group_by(isocode) %>%
+    arrange(year) %>%
+    mutate(
+      gdp_pc = rgdpna/pop,
+      growth = c(NA, diff(log(gdp_pc))) * 100
+    ) %>%
+    group_by(year) %>%
+    mutate(rank = rank(-growth, ties.method = "min")) %>%
+    ungroup() %>%
+    filter(!is.na(growth))
+  
+  p1 <- ggplot(rankings, aes(x = year, y = growth, color = isocode)) +
+    geom_line() +
+    theme_minimal() +
+    labs(title = "Comparing GDP per Capita Growth Rates for Selected Countries",
+         x = "Year", 
+         y = "Growth Rate (%)",
+         color = "Country") +
+    theme(legend.position = "bottom")
+  
+turkey_ranks <- rankings %>%
+  filter(isocode == "TUR") %>%
+  select(year, rank)
+
+p2 <- ggplot(turkey_ranks, aes(x = year, y = rank)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  scale_y_reverse(breaks = 1:11) +
+  theme_minimal() +
+  labs(title = "Turkey's Ranking",
+       x = "Year",
+       y = "Rank",
+       caption = "Countries compared with: Germany, Russia, Indonesia, Italy, Pakistan\nSouth Korea, Greece, Egypt, Hungary, Argentina") +
+  theme(plot.caption = element_text(hjust = 0.5, margin = margin(t = 10)))
+  
+  return(list(growth_plot = p1, rank_plot = p2))
+}
+```
+
+
+### Comparing Growth Rates
+```{r ten_similar_countries}
+countries <- c("TUR", "DEU", "RUS", "IDN", "ITA", "PAK", 
+              "KOR", "GRC", "EGY", "HUN", "ARG")
+plots <- analyze_countries(pwt10.0, countries, 1987, 2015)
+print(plots$growth_plot)
+```
+
+### Turkey's Ranking
+```{r turkey_ranking}
+print(plots$rank_plot)
+```
+
+# Stock Market {.tabset}
+
+```{r stock_market}
+safe_get_stock <- function(symbol, date1, date2) {
+  tryCatch({
+    getSymbols(symbol, 
+               src = "yahoo", 
+               from = date1, 
+               to = date2, 
+               periodicity = "weekly",
+               auto.assign = FALSE)
+  }, error = function(e) {
+    message(paste("Error for", symbol, ":", e$message))
+    return(NULL)
+  })
+}
+
+analyze_stocks <- function(symbols, date1, date2) {
+  results <- list()
+  combined_data <- list()
+  
+  for(symbol in symbols) {
+    stock_data <- safe_get_stock(symbol, date1, date2)
+    
+    if(is.null(stock_data)) {
+      message(paste("Error"))
+      next
+    }
+    
+    prices <- try(Cl(stock_data))
+    returns <- try({
+      ret <- diff(log(prices)) * 100
+      ret[!is.finite(ret)] <- NA
+      ret
+    })
+    roll_sd <- try(rollapply(returns, 8, sd, fill = NA))
+    
+    combined_data[[symbol]] <- list(
+      prices = data.frame(
+        date = index(prices),
+        price = as.numeric(prices)
+      ),
+      returns = data.frame(
+        date = index(returns),
+        returns = as.numeric(returns),
+        roll_sd = as.numeric(roll_sd)
+      )
+    )
+    
+    results[[symbol]] <- list(
+      stats = try({
+        c(
+          Max = max(prices, na.rm = TRUE),
+          Min = min(prices, na.rm = TRUE),
+          Range = diff(range(prices, na.rm = TRUE)),
+          Average = mean(prices, na.rm = TRUE),
+          SD = sd(as.numeric(prices), na.rm = TRUE),
+          CV = sd(as.numeric(prices), na.rm = TRUE) / 
+              mean(as.numeric(prices), na.rm = TRUE)
+        )
+      }),
+      corr = cor(returns, roll_sd, use = "complete.obs")
+    )
+  }
+  
+  # 1. Combined price comparison
+  price_data <- merge(combined_data[[symbols[1]]]$prices, 
+                     combined_data[[symbols[2]]]$prices, 
+                     by = "date", suffixes = c("_1", "_2"))
+  
+  price_plot <- ggplot(price_data, aes(x = date)) +
+    geom_line(aes(y = price_1, color = symbols[1])) +
+    geom_line(aes(y = price_2, color = symbols[2])) +
+    theme_minimal() +
+    labs(title = "Stock Price Comparison",
+         x = "Date", 
+         y = "Price",
+         color = "Stock")
+  
+  stats_text <- paste0(
+    symbols[1], " Statistics:\n",
+    "Max: ", round(results[[symbols[1]]]$stats["Max"], 2),
+    ", Min: ", round(results[[symbols[1]]]$stats["Min"], 2),
+    ", Range: ", round(results[[symbols[1]]]$stats["Range"], 2),
+    ", Average: ", round(results[[symbols[1]]]$stats["Average"], 2),
+    ", SD: ", round(results[[symbols[1]]]$stats["SD"], 2),
+    ", CV: ", round(results[[symbols[1]]]$stats["CV"], 4), "\n\n",
+    symbols[2], " Statistics:\n",
+    "Max: ", round(results[[symbols[2]]]$stats["Max"], 2),
+    ", Min: ", round(results[[symbols[2]]]$stats["Min"], 2),
+    ", Range: ", round(results[[symbols[2]]]$stats["Range"], 2),
+    ", Average: ", round(results[[symbols[2]]]$stats["Average"], 2),
+    ", SD: ", round(results[[symbols[2]]]$stats["SD"], 2),
+    ", CV: ", round(results[[symbols[2]]]$stats["CV"], 4), "\n\n",
+    "Risk Analysis: ", 
+    ifelse(results[[symbols[1]]]$stats["CV"] > results[[symbols[2]]]$stats["CV"],
+           paste(symbols[1], "is riskier than", symbols[2]),
+           paste(symbols[2], "is riskier than", symbols[1])),
+    " because of higher Coefficient of Variation (CV), which means greater standard deviation (SD). As data spreads more out, \nit becomes riskier and volatile."
+  )
+  
+  price_plot <- price_plot + 
+    labs(caption = stats_text) +
+    theme(plot.caption = element_text(hjust = 0))
+  
+  returns_data <- merge(combined_data[[symbols[1]]]$returns,
+                       combined_data[[symbols[2]]]$returns,
+                       by = "date", suffixes = c("_1", "_2"))
+  
+  returns_plot <- ggplot(returns_data, aes(x = date)) +
+    geom_line(aes(y = returns_1, color = symbols[1])) +
+    geom_line(aes(y = returns_2, color = symbols[2])) +
+    theme_minimal() +
+    labs(title = "Comparing Weekly Returns",
+         x = "Date", 
+         y = "Returns (%)",
+         color = "Stock")
+  
+  volatility_plot <- ggplot(returns_data, aes(x = date)) +
+    geom_line(aes(y = roll_sd_1, color = symbols[1])) +
+    geom_line(aes(y = roll_sd_2, color = symbols[2])) +
+    theme_minimal() +
+    labs(title = "8 Week Rolling Standard Deviation",
+         x = "Date", 
+         y = "Standard Deviation",
+         color = "Stock",
+         caption = paste("Volatility patterns indicate temporal clustering,",
+                        "showing periods of high and low market stress",
+                        "having similar impacts on both stocks."))
+  
+  returns_vol_plots <- list()
+  for(i in 1:2) {
+    symbol <- symbols[i]
+    suffix <- paste0("_", i)
+    
+    returns_vol_plots[[symbol]] <- ggplot(returns_data, aes(x = date)) +
+      geom_line(aes(y = get(paste0("returns", suffix)), color = "Returns")) +
+      geom_line(aes(y = get(paste0("roll_sd", suffix)), color = "Volatility")) +
+      theme_minimal() +
+      labs(title = paste(symbol, "Returns vs Volatility"),
+           x = "Date",
+           y = "Value",
+           color = "Metric",
+           caption = paste("Correlation coefficient:", 
+                         round(results[[symbol]]$corr, 3),
+                         "\nNegative correlation shows",
+                         "periods of high losses",
+                         "usually come with great volatility."))
+  }
+  
+  return(list(
+    price_plot = price_plot,
+    returns_plot = returns_plot,
+    volatility_plot = volatility_plot,
+    returns_vol_plots = returns_vol_plots,
+    statistics = results
+  ))
+}
+
+# Usage example:
+date_start <- as.Date("2005-05-05")
+date_end <- as.Date("2023-10-01")
+analysis <- analyze_stocks(c("MSFT", "AAPL"), date_start, date_end)
+
+# Display plots
+print(analysis$price_plot)
+print(analysis$returns_plot)
+print(analysis$volatility_plot)
+print(analysis$returns_vol_plots$MSFT)
+print(analysis$returns_vol_plots$AAPL)
+
+date_start <- as.Date("2005-05-05")
+date_end <- Sys.Date() - 1
+stocks <- analyze_stocks(c("MSFT", "AAPL"), date_start, date_end)
+
+if(!is.null(stocks$MSFT)) {
+  print(stocks$MSFT$prices)
+}
+
+if(!is.null(stocks$MSFT)) {
+  print(stocks$MSFT$returns)
+}
+
+if(!is.null(stocks$MSFT) && !inherits(stocks$MSFT$stats, "try-error")) {
+  knitr::kable(data.frame(
+    Statistic = names(stocks$MSFT$stats),
+    Value = round(stocks$MSFT$stats, 2)
+  ), caption = "Microsoft Statistics")
+}
+
+if(!is.null(stocks$AAPL)) {
+  print(stocks$AAPL$prices)
+}
+
+if(!is.null(stocks$AAPL)) {
+  print(stocks$AAPL$returns)
+}
+
+if(!is.null(stocks$AAPL) && !inherits(stocks$AAPL$stats, "try-error")) {
+  knitr::kable(data.frame(
+    Statistic = names(stocks$AAPL$stats),
+    Value = round(stocks$AAPL$stats, 2)
+  ), caption = "Apple Statistics")
+}
+```
+
+# Probability Calculations {.tabset}
+
+## Birthday Problem
+
+```{r birthday}
+birthday_probability <- function(n, x) {
+  if(x > n) return(0)
+  
+  n_simulations <- 1000
+  successes <- 0
+  
+  for(i in 1:n_simulations) {
+    birthdays <- sample(1:365, n, replace = TRUE)
+    counts <- table(birthdays)
+    successes <- successes + (max(counts) >= x)
+  }
+  
+  return(successes / n_simulations)
+}
+
+n_values <- seq(1, 555, by = 10)
+x_values <- 2:5
+
+results <- data.frame(n = n_values)
+for(x in x_values) {
+  probs <- sapply(n_values, function(n) birthday_probability(n, x))
+  results[paste0("x", x)] <- probs
+}
+
+library(ggplot2)
+library(gridExtra)
+
+# Plot for x = 2
+p1 <- ggplot(results, aes(x = n, y = x2)) +
+  geom_line(color = "pink", size = 1) +
+  theme_minimal() +
+  labs(title = "At least 2 people sharing birthday",
+       x = "Class Size (n)",
+       y = "Probability") +
+  ylim(0, 1) +
+  theme(plot.title = element_text(size = 10))
+
+# Plot for x = 3
+p2 <- ggplot(results, aes(x = n, y = x3)) +
+  geom_line(color = "red", size = 1) +
+  theme_minimal() +
+  labs(title = "At least 3 people sharing birthday",
+       x = "Class Size (n)",
+       y = "Probability") +
+  ylim(0, 1) +
+  theme(plot.title = element_text(size = 10))
+
+# Plot for x = 4
+p3 <- ggplot(results, aes(x = n, y = x4)) +
+  geom_line(color = "turquoise", size = 1) +
+  theme_minimal() +
+  labs(title = "At least 4 people sharing birthday",
+       x = "Class Size (n)",
+       y = "Probability") +
+  ylim(0, 1) +
+  theme(plot.title = element_text(size = 10))
+
+# Plot for x = 5
+p4 <- ggplot(results, aes(x = n, y = x5)) +
+  geom_line(color = "yellow", size = 1) +
+  theme_minimal() +
+  labs(title = "At least 5 people sharing birthday",
+       x = "Class Size (n)",
+       y = "Probability") +
+  ylim(0, 1) +
+  theme(plot.title = element_text(size = 10))
+
+# Combine all plots in a 2x2 grid
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+cat("Had problems with generating a 3d graph, therefore found a solution this way.")
+```
+
+## Coin Toss
+```{r coin_toss}
+simulate_coin_tosses <- function(p_heads = 0.5) {
+  N <- 500
+  results <- numeric(N)
+  cumulative_prob <- numeric(N)
+  
+  for(i in 1:N) {
+    tosses <- rbinom(4, 1, p_heads)
+    results[i] <- sum(tosses) >= 1
+    cumulative_prob[i] <- mean(results[1:i])
+  }
+  
+  return(data.frame(
+    experiment = 1:N,
+    cumulative_probability = cumulative_prob
+  ))
+}
+
+# Running simulations
+set.seed(123)
+fair_coin_results <- simulate_coin_tosses(0.5)
+unfair_coin_results <- simulate_coin_tosses(0.2)
+
+# Fair coin
+fair_coin_plot <- ggplot(fair_coin_results, aes(x = experiment, y = cumulative_probability)) +
+  geom_line(color = "green") +
+  geom_hline(yintercept = 1 - (1/2)^4, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(title = "Fair Coin (p = 0.5): Probability of At Least One Head in Four Tosses",
+       x = "Number of Experiments",
+       y = "Probability",
+       caption = "Red line is the theoretical probability = 0.9375") +
+  theme(text = element_text(size = 12),
+        plot.caption = element_text(size = 12)) +
+  ylim(0, 1)
+
+# Unfair coin
+unfair_coin_plot <- ggplot(unfair_coin_results, aes(x = experiment, y = cumulative_probability)) +
+  geom_line(color = "purple") +
+  geom_hline(yintercept = 1 - (0.8)^4, linetype = "dashed", color = "blue") +
+  theme_minimal() +
+  labs(title = "Unfair Coin (p = 0.2): Probability of At Least One Head in Four Tosses",
+       x = "Number of Experiments",
+       y = "Probability",
+       caption = "Blue line is the theoretical probability = 0.5904") +
+  theme(text = element_text(size = 12),
+        plot.caption = element_text(size = 12)) +
+  ylim(0, 1)
+
+print(fair_coin_plot)
+print(unfair_coin_plot)
+```
+
+## Elections
+```{r election}
+simulate_election <- function(n_voters, p_A, p_B, p_C, n_trials = 500) {
+  sample_sizes <- c(5, seq(10, n_voters, by = 10))
+  
+  win_matrix <- matrix(0, nrow = length(sample_sizes), ncol = 3)
+  colnames(win_matrix) <- c("A", "B", "C")
+  
+  for(i in seq_along(sample_sizes)) {
+    current_n <- sample_sizes[i]
+    winners <- character(n_trials)
+    
+    for(j in 1:n_trials) {
+      votes <- sample(c("A", "B", "C"), current_n, 
+                     prob = c(p_A, p_B, p_C), 
+                     replace = TRUE)
+      
+      vote_counts <- table(factor(votes, levels = c("A", "B", "C")))
+      
+      # Find out winner
+      max_votes <- max(vote_counts)
+      winners[j] <- sample(names(vote_counts)[vote_counts == max_votes], 1)
+    }
+    
+    win_props <- table(factor(winners, levels = c("A", "B", "C"))) / n_trials
+    win_matrix[i,] <- win_props
+  }
+  
+  # Create data frame
+  results_df <- data.frame(
+    sample_size = rep(sample_sizes, 3),
+    win_probability = c(win_matrix[,"A"], win_matrix[,"B"], win_matrix[,"C"]),
+    candidate = rep(c("A", "B", "C"), each = length(sample_sizes))
+  )
+  
+  return(results_df)
+}
+
+# Run simulations for both scenarios
+set.seed(123)
+
+# Scenario 1: 0.55, 0.25, 0.20
+results1 <- simulate_election(555, 0.55, 0.25, 0.20)
+
+plot1 <- ggplot(results1, aes(x = sample_size, y = win_probability, color = candidate)) +
+  geom_line() +
+  geom_hline(yintercept = 0.55, linetype = "dashed", color = "orange", alpha = 0.5) +
+  geom_hline(yintercept = 0.25, linetype = "dashed", color = "green", alpha = 0.5) +
+  geom_hline(yintercept = 0.20, linetype = "dashed", color = "blue", alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Convergence of Winning Probabilities (Voting Ratios: A=0.55, B=0.25, C=0.20)",
+       x = "Sample Size (n)",
+       y = "Winning Probability",
+       color = "Candidate") +
+  ylim(0, 1)
+
+# Scenario 2: 0.42, 0.48, 0.1
+results2 <- simulate_election(555, 0.42, 0.48, 0.10)
+
+plot2 <- ggplot(results2, aes(x = sample_size, y = win_probability, color = candidate)) +
+  geom_line() +
+  geom_hline(yintercept = 0.42, linetype = "dashed", color = "orange", alpha = 0.5) +
+  geom_hline(yintercept = 0.48, linetype = "dashed", color = "green", alpha = 0.5) +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "blue", alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Convergence of Winning Probabilities (Voting Ratios: A=0.42, B=0.48, C=0.10)",
+       x = "Sample Size (n)",
+       y = "Winning Probability",
+       color = "Candidate") +
+  ylim(0, 1)
+
+print(plot1)
+print(plot2)
+
+# Analysis
+cat("\nAnalysis of Election Winning Probabilities:\n\n")
+cat("1. Scenario 1 (0.55, 0.25, 0.20):\n")
+cat("   - Winning probabilities don't converge to voting ratios\n")
+cat("   - Candidate A wins much more frequently than his voting ratio\n")
+cat("2. Scenario 2 (0.42, 0.48, 0.1):\n")
+cat("   - In the 2nd scenerio I tried to simulate a probable Turkish election\n")
+cat("   - There is a competition between Reis and Primary CHP Candidate\n")
+cat("   - Even though it is a low one, REİS still has a chance\n")
+cat("   - DEM has no chance of winning despite a 10% vote share\n")
+cat("   - This demonstrates how plurality voting can affect minorities disportionately\n\n")
+cat("3. Additional Analysis Possibilities:\n")
+cat("   - Majority or Plurality Trends Over Time\n")
+cat("   - Sensitivity Analysis\n")
+cat("   - Polarization Analysis in Highly Polarized Countries\n")
+cat("   - Coalition scenarios\n")
+
+```
