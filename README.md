@@ -105,9 +105,7 @@ Here are some of the outputs you’ll see in the HTML report:
 
 If you'd like to view the HTML output online, visit:
 
-📎 [Live Report](https://yourusername.github.io/ec233-homework1/)
-
-> (Only works if you've placed the HTML in the `/docs` folder and enabled GitHub Pages.)
+📎 [Live Report](https://cankocman.github.io/statistics-project/)
 
 ---
 
